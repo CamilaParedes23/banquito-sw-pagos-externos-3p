@@ -1,0 +1,12 @@
+target
+.mvn
+mvnw
+mvnw.cmd
+.git
+.gitignore
+*.iml
+.idea
+.vscode
+application_default_credentials.json
+*.pem
+*.key

@@ -1,5 +1,8 @@
 # Keep repository intentionally empty until the external payments contract is defined.
 target/
+application_default_credentials.json
+*.pem
+*.key
 build/
 .env
 *.log
