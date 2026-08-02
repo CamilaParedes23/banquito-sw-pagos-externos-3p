@@ -1,19 +1,17 @@
 package com.banquito.switchpagos.externalpayments.dto.mock;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 public record ExternalPaymentRequest(
-        UUID batchId,
-        UUID lineId,
-        UUID correlationId,
+        UUID uetr,
         String originBankCode,
-        String destinationBankCode,
-        String sourceAccountNumber,
+        String originTransactionId,
         String destinationAccountNumber,
-        String beneficiaryIdentification,
-        String beneficiaryName,
         BigDecimal amount,
         String currency,
-        String reference) {
+        String concept,
+        String beneficiaryName,
+        LocalDate valueDate) {
 }

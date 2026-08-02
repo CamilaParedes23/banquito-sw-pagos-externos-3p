@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.banquito.switchpagos.externalpayments.dto.mock.ExternalPaymentRequest;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +17,7 @@ class MockExternalBankPaymentClientTest {
     void createsProcessedPaymentByDefault() {
         ExternalPaymentRequest request = request("Pago normal", "22001100");
 
-        var response = client.createPayment("OFFUS-" + request.lineId(), request);
+        var response = client.createPayment("OFFUS-" + request.uetr(), request);
 
         assertThat(response.status()).isEqualTo("PROCESSED");
         assertThat(response.externalPaymentId()).startsWith("EXT-");
@@ -27,7 +28,7 @@ class MockExternalBankPaymentClientTest {
     void createsFailedPaymentFromReferenceRule() {
         ExternalPaymentRequest request = request("MOCK_FAILED", "22001100");
 
-        var response = client.createPayment("OFFUS-" + request.lineId(), request);
+        var response = client.createPayment("OFFUS-" + request.uetr(), request);
 
         assertThat(response.status()).isEqualTo("FAILED");
         assertThat(response.failureCode()).isEqualTo("MOCK_BANK_FAILED");
@@ -37,7 +38,7 @@ class MockExternalBankPaymentClientTest {
     void createsRejectedPaymentFromReferenceRule() {
         ExternalPaymentRequest request = request("MOCK_REJECTED", "22001100");
 
-        var response = client.createPayment("OFFUS-" + request.lineId(), request);
+        var response = client.createPayment("OFFUS-" + request.uetr(), request);
 
         assertThat(response.status()).isEqualTo("REJECTED");
         assertThat(response.failureCode()).isEqualTo("MOCK_BANK_REJECTED");
@@ -46,7 +47,7 @@ class MockExternalBankPaymentClientTest {
     @Test
     void advancesProcessingScenarioUntilProcessed() {
         ExternalPaymentRequest request = request("MOCK_PROCESSING_THEN_PROCESSED", "22001100");
-        String key = "OFFUS-" + request.lineId();
+        String key = "OFFUS-" + request.uetr();
 
         var initial = client.createPayment(key, request);
         var firstPoll = client.getByIdempotencyKey(key);
@@ -60,7 +61,7 @@ class MockExternalBankPaymentClientTest {
     @Test
     void advancesProcessingScenarioUntilFailed() {
         ExternalPaymentRequest request = request("MOCK_PROCESSING_THEN_FAILED", "22001100");
-        String key = "OFFUS-" + request.lineId();
+        String key = "OFFUS-" + request.uetr();
 
         client.createPayment(key, request);
         client.getByIdempotencyKey(key);
@@ -73,7 +74,7 @@ class MockExternalBankPaymentClientTest {
     @Test
     void timeoutAfterCreateCanRecoverByIdempotency() {
         ExternalPaymentRequest request = request("MOCK_TIMEOUT_THEN_PROCESSED", "22001100");
-        String key = "OFFUS-" + request.lineId();
+        String key = "OFFUS-" + request.uetr();
 
         assertThatThrownBy(() -> client.createPayment(key, request))
                 .isInstanceOf(ExternalBankTimeoutException.class);
@@ -85,26 +86,41 @@ class MockExternalBankPaymentClientTest {
     @Test
     void sameIdempotencyKeyWithDifferentFingerprintIsConflict() {
         ExternalPaymentRequest request = request("Pago normal", "22001100");
-        String key = "OFFUS-" + request.lineId();
+        String key = "OFFUS-" + request.uetr();
         client.createPayment(key, request);
 
         assertThatThrownBy(() -> client.createPayment(key, request("Pago normal", "99990000")))
                 .isInstanceOf(ExternalBankConflictException.class);
     }
 
+    @Test
+    void rejectsInvalidInterbankContract() {
+        ExternalPaymentRequest request = new ExternalPaymentRequest(
+                UUID.fromString("00000000-0000-3000-8000-000000000001"),
+                "BQTO",
+                "TX-1",
+                "22001100",
+                new BigDecimal("10.50"),
+                "USD",
+                "Pago normal",
+                "Beneficiario Uno",
+                LocalDate.now());
+
+        assertThatThrownBy(() -> client.createPayment("OFFUS-invalid", request))
+                .isInstanceOf(ExternalBankClientException.class)
+                .hasMessageContaining("contrato requerido");
+    }
+
     private static ExternalPaymentRequest request(String reference, String destinationAccount) {
         return new ExternalPaymentRequest(
                 UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
                 "BQTO",
-                "PICH",
-                "1100220033",
+                "TX-" + UUID.randomUUID(),
                 destinationAccount,
-                "1717171717",
-                "Beneficiario Uno",
                 new BigDecimal("10.50"),
                 "USD",
-                reference);
+                reference,
+                "Beneficiario Uno",
+                LocalDate.now());
     }
 }

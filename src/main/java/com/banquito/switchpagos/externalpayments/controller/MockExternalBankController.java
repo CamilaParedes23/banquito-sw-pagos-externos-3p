@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/mock-api/v1/external-payments")
+@RequestMapping("/api/v2/interbank/payments")
 public class MockExternalBankController {
     private final ExternalBankPaymentClient externalBankPaymentClient;
 

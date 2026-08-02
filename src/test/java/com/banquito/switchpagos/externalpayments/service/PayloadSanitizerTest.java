@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.banquito.switchpagos.externalpayments.dto.mock.ExternalPaymentRequest;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -15,26 +16,19 @@ class PayloadSanitizerTest {
     void masksAccountsAndBeneficiaryIdentification() {
         ExternalPaymentRequest request = new ExternalPaymentRequest(
                 UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
                 "BQTO",
-                "PICH",
-                "1100220033",
+                "TX-123",
                 "2200110099",
-                "1717171717",
-                "Beneficiario Uno",
                 new BigDecimal("10.50"),
                 "USD",
-                "Pago normal");
+                "Pago normal",
+                "Beneficiario Uno",
+                LocalDate.now());
 
         String sanitized = sanitizer.sanitize(request);
 
-        assertThat(sanitized).contains("sourceAccountNumber=****0033");
         assertThat(sanitized).contains("destinationAccountNumber=****0099");
-        assertThat(sanitized).contains("beneficiaryIdentification=****1717");
-        assertThat(sanitized).doesNotContain("1100220033");
         assertThat(sanitized).doesNotContain("2200110099");
-        assertThat(sanitized).doesNotContain("1717171717");
     }
 
     @Test

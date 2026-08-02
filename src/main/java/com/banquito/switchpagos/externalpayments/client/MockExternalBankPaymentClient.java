@@ -7,6 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.stereotype.Component;
@@ -19,6 +20,7 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
 
     @Override
     public ExternalPaymentResponse createPayment(String idempotencyKey, ExternalPaymentRequest request) {
+        validateContract(request);
         MockPayment existing = byIdempotency.get(idempotencyKey);
         if (existing != null) {
             if (!existing.fingerprint.equals(fingerprint(request))) {
@@ -28,14 +30,14 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
         }
 
         MockPayment created = new MockPayment(
-                "EXT-" + request.lineId().toString().substring(0, 8).toUpperCase(),
+                "EXT-" + request.uetr().toString().substring(0, 8).toUpperCase(),
                 idempotencyKey,
                 fingerprint(request),
-                scenarioFor(request.reference()));
+                scenarioFor(request.concept()));
         byIdempotency.put(idempotencyKey, created);
         byExternalId.put(created.externalPaymentId, created);
-        if (contains(request.reference(), "MOCK_TIMEOUT_THEN_PROCESSED")
-                || contains(request.reference(), "MOCK_TIMEOUT_THEN_FAILED")) {
+        if (contains(request.concept(), "MOCK_TIMEOUT_THEN_PROCESSED")
+                || contains(request.concept(), "MOCK_TIMEOUT_THEN_FAILED")) {
             throw new ExternalBankTimeoutException("Timeout simulado despues de crear la operacion externa.");
         }
         return created.currentResponse(false);
@@ -80,8 +82,29 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
     }
 
     private static String fingerprint(ExternalPaymentRequest request) {
-        return request.destinationAccountNumber() + "|" + request.destinationBankCode() + "|"
-                + request.amount() + "|" + request.currency();
+        return request.uetr() + "|" + request.originBankCode() + "|" + request.originTransactionId() + "|"
+                + request.destinationAccountNumber() + "|" + request.amount() + "|" + request.currency() + "|"
+                + request.valueDate();
+    }
+
+    private static void validateContract(ExternalPaymentRequest request) {
+        if (request == null || request.uetr() == null || !isUuidV4(request.uetr())
+                || blank(request.originBankCode()) || blank(request.originTransactionId())
+                || blank(request.destinationAccountNumber()) || request.amount() == null
+                || request.amount().signum() <= 0 || blank(request.currency())
+                || blank(request.beneficiaryName()) || request.valueDate() == null) {
+            throw new ExternalBankClientException(
+                    "INVALID_INTERBANK_PAYMENT_REQUEST",
+                    "La solicitud interbancaria no cumple el contrato requerido.");
+        }
+    }
+
+    private static boolean isUuidV4(UUID uuid) {
+        return uuid.version() == 4;
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 
     private record MockPayment(

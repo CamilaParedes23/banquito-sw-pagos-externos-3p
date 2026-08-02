@@ -21,6 +21,7 @@ import com.banquito.switchpagos.externalpayments.model.OffUsPaymentAttempt;
 import com.banquito.switchpagos.externalpayments.repository.OffUsPaymentAttemptRepository;
 import com.banquito.switchpagos.externalpayments.repository.OffUsPaymentRepository;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Set;
@@ -328,18 +329,15 @@ public class OffUsPaymentService {
 
     private ExternalPaymentRequest toExternalRequest(OffUsPayment payment) {
         return new ExternalPaymentRequest(
-                payment.getBatchId(),
                 payment.getLineId(),
-                payment.getCorrelationId(),
                 originBankCode,
-                mapDestinationBankCode(payment.getRoutingCode()),
-                payment.getSourceAccountNumber(),
+                payment.getId().toString(),
                 payment.getDestinationAccountNumber(),
-                payment.getBeneficiaryIdentification(),
-                payment.getBeneficiaryName(),
                 payment.getAmount(),
                 payment.getCurrency(),
-                payment.getReference());
+                payment.getReference(),
+                payment.getBeneficiaryName(),
+                LocalDate.now());
     }
 
     private OffUsPaymentAttempt startAttempt(OffUsPayment payment, AttemptOperationType type, Object request) {
