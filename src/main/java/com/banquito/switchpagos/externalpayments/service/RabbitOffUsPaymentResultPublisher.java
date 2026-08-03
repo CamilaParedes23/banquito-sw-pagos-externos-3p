@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "rabbitmq", matchIfMissing = true)
+@ConditionalOnProperty(name = "messaging.provider", havingValue = "rabbitmq")
 public class RabbitOffUsPaymentResultPublisher implements OffUsPaymentResultPublisher {
     private final RabbitTemplate rabbitTemplate;
     private final String exchange;

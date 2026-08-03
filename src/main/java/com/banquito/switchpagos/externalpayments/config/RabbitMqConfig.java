@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "rabbitmq", matchIfMissing = true)
+@ConditionalOnProperty(name = "messaging.provider", havingValue = "rabbitmq")
 public class RabbitMqConfig {
 
     @Bean
