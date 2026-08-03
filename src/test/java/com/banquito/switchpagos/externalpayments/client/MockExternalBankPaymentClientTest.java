@@ -86,43 +86,56 @@ class MockExternalBankPaymentClientTest {
     }
 
     @Test
+    void sameIdempotencyKeyWithSameFingerprintIsReplay() {
+        InterbankPaymentRequest request = request("Pago normal", "22001100");
+        String key = request.paymentLineUuid().toString();
+        client.createPayment(key, request);
+
+        var replay = client.createPayment(key, request);
+
+        assertThat(replay.idempotencyReplayed()).isTrue();
+    }
+
+    @Test
     void serializesOnlyRealInterbankContractFields() throws Exception {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         InterbankPaymentRequest request = request("Pago normal", "22001100");
 
         String json = mapper.writeValueAsString(request);
 
-        assertThat(json).contains("\"uetr\"");
-        assertThat(json).contains("\"originTransactionId\"");
-        assertThat(json).contains("\"routingCode\":\"003\"");
+        assertThat(json).contains("\"sourceTransferUuid\"");
+        assertThat(json).contains("\"paymentLineUuid\"");
+        assertThat(json).contains("\"sourceRoutingCode\":\"003\"");
+        assertThat(json).contains("\"destinationRoutingCode\":\"001\"");
+        assertThat(json).contains("\"sourceAccountNumber\":\"1010100001\"");
         assertThat(json).contains("\"destinationAccountNumber\":\"22001100\"");
-        assertThat(json).contains("\"valueDate\"");
-        assertThat(json).doesNotContain("sourceRoutingCode");
-        assertThat(json).doesNotContain("destinationRoutingCode");
-        assertThat(json).doesNotContain("paymentLineUuid");
-        assertThat(json).doesNotContain("sourceAccountNumber");
-        assertThat(json).doesNotContain("beneficiaryIdentification");
+        assertThat(json).contains("\"beneficiaryIdentification\":\"0102030405\"");
+        assertThat(json).contains("\"accountingDate\"");
+        assertThat(json).doesNotContain("\"uetr\"");
+        assertThat(json).doesNotContain("\"originTransactionId\"");
+        assertThat(json).doesNotContain("\"routingCode\"");
+        assertThat(json).doesNotContain("\"valueDate\"");
     }
 
     @Test
     void rejectsInvalidInterbankContract() {
         InterbankPaymentRequest request = new InterbankPaymentRequest(
                 UUID.randomUUID(),
-                UUID.randomUUID().toString(),
-                "003",
-                "22001100",
-                new BigDecimal("10.50"),
-                "USD",
-                "Pago normal",
-                "Beneficiario Uno",
-                LocalDate.now(),
                 UUID.fromString("00000000-0000-3000-8000-000000000001"),
                 UUID.randomUUID(),
+                "003",
+                "001",
                 "1010100001",
+                "22001100",
                 "1790012345001",
                 "Empresa Uno",
                 "0102030405",
+                "Beneficiario Uno",
                 "beneficiario@example.com",
+                "Pago normal",
+                new BigDecimal("10.50"),
+                "USD",
+                LocalDate.now(),
                 UUID.randomUUID());
 
         assertThatThrownBy(() -> client.createPayment(request.paymentLineUuid().toString(), request))
@@ -137,21 +150,21 @@ class MockExternalBankPaymentClientTest {
     private static InterbankPaymentRequest requestWithLineId(UUID paymentLineId, String reference, String destinationAccount) {
         return new InterbankPaymentRequest(
                 UUID.randomUUID(),
-                paymentLineId.toString(),
-                "003",
-                destinationAccount,
-                new BigDecimal("10.50"),
-                "USD",
-                reference,
-                "Beneficiario Uno",
-                LocalDate.now(),
                 paymentLineId,
                 UUID.randomUUID(),
+                "003",
+                "001",
                 "1010100001",
+                destinationAccount,
                 "1790012345001",
                 "Empresa Uno",
                 "0102030405",
+                "Beneficiario Uno",
                 "beneficiario@example.com",
+                reference,
+                new BigDecimal("10.50"),
+                "USD",
+                LocalDate.now(),
                 UUID.randomUUID());
     }
 }

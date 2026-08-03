@@ -44,6 +44,7 @@ public class OffUsPaymentService {
     private final OffUsCoreAccountingClient coreAccountingClient;
     private final OffUsPaymentResultPublisher resultPublisher;
     private final PayloadSanitizer sanitizer;
+    private final String sourceRoutingCode;
     private final String defaultDestinationRoutingCode;
     private final String pichinchaRoutingCode;
     private final String guayaquilRoutingCode;
@@ -59,6 +60,7 @@ public class OffUsPaymentService {
             OffUsCoreAccountingClient coreAccountingClient,
             OffUsPaymentResultPublisher resultPublisher,
             PayloadSanitizer sanitizer,
+            @Value("${external.bank.source-routing-code}") String sourceRoutingCode,
             @Value("${external.bank.default-destination-routing-code}") String defaultDestinationRoutingCode,
             @Value("${external.bank.destination-routing-code.30}") String pichinchaRoutingCode,
             @Value("${external.bank.destination-routing-code.32}") String guayaquilRoutingCode,
@@ -72,6 +74,7 @@ public class OffUsPaymentService {
         this.coreAccountingClient = coreAccountingClient;
         this.resultPublisher = resultPublisher;
         this.sanitizer = sanitizer;
+        this.sourceRoutingCode = sourceRoutingCode;
         this.defaultDestinationRoutingCode = defaultDestinationRoutingCode;
         this.pichinchaRoutingCode = pichinchaRoutingCode;
         this.guayaquilRoutingCode = guayaquilRoutingCode;
@@ -359,22 +362,26 @@ public class OffUsPaymentService {
     private InterbankPaymentRequest toExternalRequest(OffUsPayment payment) {
         return new InterbankPaymentRequest(
                 payment.getId(),
-                payment.getLineId().toString(),
-                mapDestinationBankCode(payment.getRoutingCode()),
-                payment.getDestinationAccountNumber(),
-                payment.getAmount(),
-                payment.getCurrency(),
-                payment.getReference(),
-                payment.getBeneficiaryName(),
-                resolveAccountingDate(),
                 payment.getLineId(),
                 payment.getBatchId(),
+                sourceRoutingCode,
+                mapDestinationBankCode(payment.getRoutingCode()),
                 payment.getSourceAccountNumber(),
+                payment.getDestinationAccountNumber(),
                 payment.getCompanyRuc(),
-                payment.getCompanyRuc(),
+                originatorName(payment),
                 payment.getBeneficiaryIdentification(),
+                payment.getBeneficiaryName(),
                 payment.getNotificationEmail(),
+                payment.getReference(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                resolveAccountingDate(),
                 payment.getCorrelationId());
+    }
+
+    private String originatorName(OffUsPayment payment) {
+        return blank(payment.getCompanyRuc()) ? "BanQuito Switch" : "Empresa " + payment.getCompanyRuc();
     }
 
     private OffUsPaymentAttempt startAttempt(OffUsPayment payment, AttemptOperationType type, Object request) {

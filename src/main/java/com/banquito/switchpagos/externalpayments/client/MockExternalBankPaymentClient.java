@@ -3,6 +3,7 @@ package com.banquito.switchpagos.externalpayments.client;
 import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentRequest;
 import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentResponse;
 import com.banquito.switchpagos.externalpayments.enums.ExternalBankStatus;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -23,16 +24,31 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
     @Override
     public InterbankPaymentResponse createPayment(String idempotencyKey, InterbankPaymentRequest request) {
         validateContract(request);
+        if (!Objects.equals(idempotencyKey, request.paymentLineUuid().toString())) {
+            throw new ExternalBankClientException(
+                    "INVALID_IDEMPOTENCY_KEY",
+                    "Idempotency-Key debe ser identico a paymentLineUuid.");
+        }
         MockPayment existing = byIdempotency.get(idempotencyKey);
         if (existing != null) {
             if (!existing.fingerprint.equals(fingerprint(request))) {
                 throw new ExternalBankConflictException("La clave de idempotencia ya existe con un payload diferente.");
             }
-            return existing.currentResponse(false);
+            return existing.currentResponse(false, true);
         }
 
         MockPayment created = new MockPayment(
                 UUID.nameUUIDFromBytes(("MOCK-" + request.paymentLineUuid()).getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                request.sourceTransferUuid(),
+                request.paymentLineUuid(),
+                request.batchUuid(),
+                request.sourceRoutingCode(),
+                request.destinationRoutingCode(),
+                request.sourceAccountNumber(),
+                request.destinationAccountNumber(),
+                request.amount(),
+                request.currency(),
+                request.correlationId(),
                 idempotencyKey,
                 fingerprint(request),
                 scenarioFor(request.concept()));
@@ -42,7 +58,7 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
                 || contains(request.concept(), "MOCK_TIMEOUT_THEN_FAILED")) {
             throw new ExternalBankTimeoutException("Timeout simulado despues de crear la operacion externa.");
         }
-        return created.currentResponse(false);
+        return created.currentResponse(false, false);
     }
 
     @Override
@@ -51,7 +67,7 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
         if (payment == null) {
             throw new ExternalBankClientException("EXTERNAL_PAYMENT_NOT_FOUND", "No existe pago externo mock.");
         }
-        return payment.currentResponse(true);
+        return payment.currentResponse(true, false);
     }
 
     private static List<ExternalBankStatus> scenarioFor(String reference) {
@@ -76,18 +92,24 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
 
     private static String fingerprint(InterbankPaymentRequest request) {
         return request.sourceTransferUuid() + "|" + request.paymentLineUuid() + "|" + request.batchUuid() + "|"
-                + request.routingCode() + "|"
+                + request.sourceRoutingCode() + "|" + request.destinationRoutingCode() + "|"
+                + request.sourceAccountNumber() + "|"
                 + request.destinationAccountNumber() + "|" + request.amount() + "|" + request.currency() + "|"
                 + request.accountingDate();
     }
 
     private static void validateContract(InterbankPaymentRequest request) {
         if (request == null || request.sourceTransferUuid() == null || request.paymentLineUuid() == null
-                || !isUuidV4(request.paymentLineUuid()) || blank(request.originTransactionId())
-                || !isThreeDigitRoutingCode(request.routingCode()) || blank(request.destinationAccountNumber()) || request.amount() == null
+                || request.batchUuid() == null || request.correlationId() == null
+                || !isUuidV4(request.sourceTransferUuid()) || !isUuidV4(request.paymentLineUuid())
+                || !isUuidV4(request.correlationId())
+                || !isThreeDigitRoutingCode(request.sourceRoutingCode())
+                || !isThreeDigitRoutingCode(request.destinationRoutingCode())
+                || blank(request.sourceAccountNumber()) || blank(request.destinationAccountNumber()) || request.amount() == null
                 || request.amount().signum() <= 0 || blank(request.currency())
-                || blank(request.beneficiaryName())
-                || request.accountingDate() == null || request.correlationId() == null) {
+                || blank(request.originatorIdentification()) || blank(request.originatorName())
+                || blank(request.beneficiaryIdentification()) || blank(request.beneficiaryName())
+                || request.accountingDate() == null) {
             throw new ExternalBankClientException(
                     "INVALID_INTERBANK_PAYMENT_REQUEST",
                     "La solicitud interbancaria no cumple el contrato requerido.");
@@ -108,15 +130,30 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
 
     private record MockPayment(
             UUID externalPaymentId,
+            UUID sourceTransferUuid,
+            UUID paymentLineUuid,
+            UUID batchUuid,
+            String sourceRoutingCode,
+            String destinationRoutingCode,
+            String sourceAccountNumber,
+            String destinationAccountNumber,
+            BigDecimal amount,
+            String currency,
+            UUID correlationId,
             String idempotencyKey,
             String fingerprint,
             List<ExternalBankStatus> scenario,
             AtomicInteger queryCount) {
-        MockPayment(UUID externalPaymentId, String idempotencyKey, String fingerprint, List<ExternalBankStatus> scenario) {
-            this(externalPaymentId, idempotencyKey, fingerprint, scenario, new AtomicInteger(0));
+        MockPayment(UUID externalPaymentId, UUID sourceTransferUuid, UUID paymentLineUuid, UUID batchUuid,
+                    String sourceRoutingCode, String destinationRoutingCode, String sourceAccountNumber,
+                    String destinationAccountNumber, BigDecimal amount, String currency, UUID correlationId,
+                    String idempotencyKey, String fingerprint, List<ExternalBankStatus> scenario) {
+            this(externalPaymentId, sourceTransferUuid, paymentLineUuid, batchUuid, sourceRoutingCode, destinationRoutingCode,
+                    sourceAccountNumber, destinationAccountNumber, amount, currency, correlationId, idempotencyKey, fingerprint,
+                    scenario, new AtomicInteger(0));
         }
 
-        InterbankPaymentResponse currentResponse(boolean advance) {
+        InterbankPaymentResponse currentResponse(boolean advance, boolean idempotencyReplayed) {
             int index = advance ? queryCount.updateAndGet(i -> Math.min(i + 1, scenario.size() - 1)) : queryCount.get();
             ExternalBankStatus status = scenario.get(Math.min(index, scenario.size() - 1));
             String failureCode = switch (status) {
@@ -131,17 +168,17 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
             OffsetDateTime processedAt = Objects.equals(status, ExternalBankStatus.SETTLED) ? OffsetDateTime.now() : null;
             return new InterbankPaymentResponse(
                     externalPaymentId,
-                    null,
-                    null,
-                    null,
+                    sourceTransferUuid,
+                    paymentLineUuid,
+                    batchUuid,
                     "SALIENTE",
                     status.name(),
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
+                    sourceRoutingCode,
+                    destinationRoutingCode,
+                    sourceAccountNumber,
+                    destinationAccountNumber,
+                    amount,
+                    currency,
                     status == ExternalBankStatus.SETTLED ? externalPaymentId : null,
                     null,
                     null,
@@ -151,8 +188,8 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
                     message,
                     null,
                     processedAt,
-                    false,
-                    null);
+                    idempotencyReplayed,
+                    correlationId);
         }
     }
 }

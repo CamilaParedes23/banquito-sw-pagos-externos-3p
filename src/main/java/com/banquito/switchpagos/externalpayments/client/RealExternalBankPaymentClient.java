@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -40,6 +41,7 @@ public class RealExternalBankPaymentClient implements ExternalBankPaymentClient 
             return externalBankRestClient.post()
                     .uri(paymentPath)
                     .headers(headers -> applyPaymentHeaders(headers, idempotencyKey, request.correlationId()))
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(request)
                     .retrieve()
                     .body(InterbankPaymentResponse.class);
