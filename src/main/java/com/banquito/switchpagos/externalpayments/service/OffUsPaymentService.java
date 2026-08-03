@@ -7,10 +7,10 @@ import com.banquito.switchpagos.externalpayments.client.OffUsCoreAccountingClien
 import com.banquito.switchpagos.externalpayments.dto.event.OffUsPaymentCompletedEvent;
 import com.banquito.switchpagos.externalpayments.dto.event.OffUsPaymentFailedEvent;
 import com.banquito.switchpagos.externalpayments.dto.event.PaymentLineRoutedOffUsEvent;
+import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentRequest;
+import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentResponse;
 import com.banquito.switchpagos.externalpayments.dto.mock.CoreAccountingRequest;
 import com.banquito.switchpagos.externalpayments.dto.mock.CoreAccountingResponse;
-import com.banquito.switchpagos.externalpayments.dto.mock.ExternalPaymentRequest;
-import com.banquito.switchpagos.externalpayments.dto.mock.ExternalPaymentResponse;
 import com.banquito.switchpagos.externalpayments.enums.AttemptOperationType;
 import com.banquito.switchpagos.externalpayments.enums.CoreAccountingStatus;
 import com.banquito.switchpagos.externalpayments.enums.ExternalBankStatus;
@@ -23,6 +23,7 @@ import com.banquito.switchpagos.externalpayments.repository.OffUsPaymentReposito
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -32,7 +33,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OffUsPaymentService {
-    private static final Set<String> FINAL_STATUSES = Set.of(PaymentStatus.PROCESADA.name(), PaymentStatus.FALLIDA_BANCO.name(), PaymentStatus.FALLIDA_CORE.name());
+    private static final Set<String> FINAL_STATUSES = Set.of(
+            PaymentStatus.PROCESADA.name(),
+            PaymentStatus.FALLIDA_BANCO.name(),
+            PaymentStatus.FALLIDA_CORE.name());
 
     private final OffUsPaymentRepository paymentRepository;
     private final OffUsPaymentAttemptRepository attemptRepository;
@@ -40,7 +44,12 @@ public class OffUsPaymentService {
     private final OffUsCoreAccountingClient coreAccountingClient;
     private final OffUsPaymentResultPublisher resultPublisher;
     private final PayloadSanitizer sanitizer;
-    private final String originBankCode;
+    private final String sourceRoutingCode;
+    private final String defaultDestinationRoutingCode;
+    private final String pichinchaRoutingCode;
+    private final String guayaquilRoutingCode;
+    private final String pacificoRoutingCode;
+    private final String defaultAccountingDate;
     private final Integer maxStatusQueryAttempts;
     private final Long pollIntervalMs;
 
@@ -51,7 +60,12 @@ public class OffUsPaymentService {
             OffUsCoreAccountingClient coreAccountingClient,
             OffUsPaymentResultPublisher resultPublisher,
             PayloadSanitizer sanitizer,
-            @Value("${external.payment.mock.origin-bank-code}") String originBankCode,
+            @Value("${external.bank.source-routing-code}") String sourceRoutingCode,
+            @Value("${external.bank.default-destination-routing-code}") String defaultDestinationRoutingCode,
+            @Value("${external.bank.destination-routing-code.30}") String pichinchaRoutingCode,
+            @Value("${external.bank.destination-routing-code.32}") String guayaquilRoutingCode,
+            @Value("${external.bank.destination-routing-code.35}") String pacificoRoutingCode,
+            @Value("${core.switch.default-accounting-date}") String defaultAccountingDate,
             @Value("${external.payment.poll.max-attempts}") Integer maxStatusQueryAttempts,
             @Value("${external.payment.poll.interval-ms}") Long pollIntervalMs) {
         this.paymentRepository = paymentRepository;
@@ -60,7 +74,12 @@ public class OffUsPaymentService {
         this.coreAccountingClient = coreAccountingClient;
         this.resultPublisher = resultPublisher;
         this.sanitizer = sanitizer;
-        this.originBankCode = originBankCode;
+        this.sourceRoutingCode = sourceRoutingCode;
+        this.defaultDestinationRoutingCode = defaultDestinationRoutingCode;
+        this.pichinchaRoutingCode = pichinchaRoutingCode;
+        this.guayaquilRoutingCode = guayaquilRoutingCode;
+        this.pacificoRoutingCode = pacificoRoutingCode;
+        this.defaultAccountingDate = defaultAccountingDate;
         this.maxStatusQueryAttempts = maxStatusQueryAttempts;
         this.pollIntervalMs = pollIntervalMs;
     }
@@ -98,7 +117,10 @@ public class OffUsPaymentService {
 
     @Transactional
     public void pollPendingPayments() {
-        List<String> statuses = List.of(PaymentStatus.PENDIENTE_BANCO.name(), PaymentStatus.CONSULTANDO_BANCO.name(), PaymentStatus.ERROR_TECNICO.name());
+        List<String> statuses = List.of(
+                PaymentStatus.PENDIENTE_BANCO.name(),
+                PaymentStatus.CONSULTANDO_BANCO.name(),
+                PaymentStatus.ERROR_TECNICO.name());
         for (OffUsPayment payment : paymentRepository.findByStatusInAndNextStatusQueryAtLessThanEqual(statuses, OffsetDateTime.now())) {
             if (!Boolean.TRUE.equals(payment.getFinalResultPublished())) {
                 queryExternalStatus(payment);
@@ -107,12 +129,12 @@ public class OffUsPaymentService {
     }
 
     private void createExternalPayment(OffUsPayment payment) {
-        ExternalPaymentRequest request = toExternalRequest(payment);
+        InterbankPaymentRequest request = toExternalRequest(payment);
         OffUsPaymentAttempt attempt = startAttempt(payment, AttemptOperationType.CREATE_PAYMENT, request);
         payment.setStatus(PaymentStatus.ENVIANDO_BANCO.name());
         payment.setUpdatedAt(OffsetDateTime.now());
         try {
-            ExternalPaymentResponse response = externalBankClient.createPayment(payment.getIdempotencyKey(), request);
+            InterbankPaymentResponse response = externalBankClient.createPayment(payment.getIdempotencyKey(), request);
             finishAttempt(attempt, true, 200, response.status(), null, null, response);
             handleExternalResponse(payment, response, FailureStage.EXTERNAL_BANK);
         } catch (ExternalBankTimeoutException exception) {
@@ -121,7 +143,7 @@ public class OffUsPaymentService {
             scheduleNextQuery(payment);
             queryExternalStatus(payment);
         } catch (ExternalBankClientException exception) {
-            finishAttempt(attempt, false, 409, null, exception.getCode(), exception.getMessage(), null);
+            finishAttempt(attempt, false, resolveHttpStatus(exception), null, exception.getCode(), exception.getMessage(), null);
             fail(payment, FailureStage.EXTERNAL_BANK, exception.getCode(), exception.getMessage());
         }
         paymentRepository.save(payment);
@@ -137,19 +159,13 @@ public class OffUsPaymentService {
         }
         payment.setStatus(PaymentStatus.CONSULTANDO_BANCO.name());
         payment.setStatusQueryAttempts(payment.getStatusQueryAttempts() + 1);
-        AttemptOperationType type = payment.getExternalPaymentId() == null
-                ? AttemptOperationType.QUERY_BY_IDEMPOTENCY
-                : AttemptOperationType.QUERY_BY_EXTERNAL_ID;
-        Object request = payment.getExternalPaymentId() == null ? payment.getIdempotencyKey() : payment.getExternalPaymentId();
-        OffUsPaymentAttempt attempt = startAttempt(payment, type, request);
+        OffUsPaymentAttempt attempt = startAttempt(payment, AttemptOperationType.QUERY_BY_PAYMENT_LINE, payment.getLineId());
         try {
-            ExternalPaymentResponse response = payment.getExternalPaymentId() == null
-                    ? externalBankClient.getByIdempotencyKey(payment.getIdempotencyKey())
-                    : externalBankClient.getByExternalPaymentId(payment.getExternalPaymentId());
+            InterbankPaymentResponse response = externalBankClient.getByPaymentLineId(payment.getLineId());
             finishAttempt(attempt, true, 200, response.status(), null, null, response);
             handleExternalResponse(payment, response, FailureStage.STATUS_QUERY);
         } catch (ExternalBankClientException exception) {
-            finishAttempt(attempt, false, 404, null, exception.getCode(), exception.getMessage(), null);
+            finishAttempt(attempt, false, resolveHttpStatus(exception), null, exception.getCode(), exception.getMessage(), null);
             payment.setStatus(PaymentStatus.ERROR_TECNICO.name());
             payment.setExternalFailureCode(exception.getCode());
             payment.setExternalMessage(limit(exception.getMessage(), 500));
@@ -158,25 +174,41 @@ public class OffUsPaymentService {
         paymentRepository.save(payment);
     }
 
-    private void handleExternalResponse(OffUsPayment payment, ExternalPaymentResponse response, FailureStage failureStage) {
-        payment.setExternalPaymentId(response.externalPaymentId());
+    private void handleExternalResponse(OffUsPayment payment, InterbankPaymentResponse response, FailureStage failureStage) {
+        if (response == null || response.status() == null || response.status().isBlank()) {
+            fail(payment, failureStage, "EXTERNAL_BANK_EMPTY_RESPONSE", "El banco externo no devolvio un estado de pago.");
+            return;
+        }
+        payment.setExternalPaymentId(response.interbankTransferUuid() == null ? null : response.interbankTransferUuid().toString());
         payment.setExternalStatus(response.status());
-        payment.setExternalFailureCode(response.failureCode());
+        payment.setExternalFailureCode(response.errorCode());
         payment.setExternalMessage(limit(response.message(), 500));
         payment.setExternalProcessedAt(response.processedAt());
-        ExternalBankStatus status = ExternalBankStatus.valueOf(response.status());
-        if (status == ExternalBankStatus.PROCESSING) {
+        ExternalBankStatus status = parseExternalStatus(response.status());
+        if (status == null) {
+            fail(payment, failureStage, "EXTERNAL_BANK_UNKNOWN_STATUS", "Estado externo no soportado: " + response.status());
+            return;
+        }
+        if (status == ExternalBankStatus.PREPARED) {
             payment.setStatus(PaymentStatus.PENDIENTE_BANCO.name());
             scheduleNextQuery(payment);
             return;
         }
-        if (status == ExternalBankStatus.FAILED || status == ExternalBankStatus.REJECTED) {
-            payment.setStatus(status == ExternalBankStatus.FAILED ? PaymentStatus.FALLIDA_BANCO.name() : PaymentStatus.RECHAZADA_BANCO.name());
-            fail(payment, failureStage, response.failureCode(), response.message());
+        if (status == ExternalBankStatus.REJECTED) {
+            payment.setStatus(PaymentStatus.RECHAZADA_BANCO.name());
+            fail(payment, failureStage, response.errorCode(), response.message());
             return;
         }
         payment.setStatus(PaymentStatus.PROCESADA_BANCO.name());
         registerCoreAccounting(payment);
+    }
+
+    private ExternalBankStatus parseExternalStatus(String status) {
+        try {
+            return ExternalBankStatus.valueOf(status);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private void registerCoreAccounting(OffUsPayment payment) {
@@ -304,7 +336,7 @@ public class OffUsPaymentService {
         payment.setLineId(event.lineId);
         payment.setCorrelationId(event.correlationId);
         payment.setEventId(event.eventId);
-        payment.setIdempotencyKey("OFFUS-" + event.lineId);
+        payment.setIdempotencyKey(event.lineId.toString());
         payment.setCompanyRuc(event.companyRuc);
         payment.setSourceAccountNumber(event.sourceAccountNumber);
         payment.setCoreFundingId(event.coreFundingId);
@@ -327,17 +359,25 @@ public class OffUsPaymentService {
         return payment;
     }
 
-    private ExternalPaymentRequest toExternalRequest(OffUsPayment payment) {
-        return new ExternalPaymentRequest(
+    private InterbankPaymentRequest toExternalRequest(OffUsPayment payment) {
+        return new InterbankPaymentRequest(
+                payment.getId(),
                 payment.getLineId(),
-                originBankCode,
-                payment.getId().toString(),
+                payment.getBatchId(),
+                sourceRoutingCode,
+                mapDestinationBankCode(payment.getRoutingCode()),
+                payment.getSourceAccountNumber(),
                 payment.getDestinationAccountNumber(),
+                payment.getCompanyRuc(),
+                payment.getCompanyRuc(),
+                payment.getBeneficiaryIdentification(),
+                payment.getBeneficiaryName(),
+                payment.getNotificationEmail(),
+                payment.getReference(),
                 payment.getAmount(),
                 payment.getCurrency(),
-                payment.getReference(),
-                payment.getBeneficiaryName(),
-                LocalDate.now());
+                resolveAccountingDate(),
+                payment.getCorrelationId());
     }
 
     private OffUsPaymentAttempt startAttempt(OffUsPayment payment, AttemptOperationType type, Object request) {
@@ -364,6 +404,10 @@ public class OffUsPaymentService {
         attemptRepository.save(attempt);
     }
 
+    private Integer resolveHttpStatus(ExternalBankClientException exception) {
+        return exception.getHttpStatus() == null ? 500 : exception.getHttpStatus();
+    }
+
     private void scheduleNextQuery(OffUsPayment payment) {
         payment.setNextStatusQueryAt(OffsetDateTime.now().plusNanos(pollIntervalMs * 1_000_000));
         payment.setUpdatedAt(OffsetDateTime.now());
@@ -382,11 +426,21 @@ public class OffUsPaymentService {
 
     private String mapDestinationBankCode(String routingCode) {
         return switch (routingCode) {
-            case "30" -> "PICH";
-            case "32" -> "GYQL";
-            case "35" -> "PACF";
-            default -> routingCode;
+            case "30" -> pichinchaRoutingCode;
+            case "32" -> guayaquilRoutingCode;
+            case "35" -> pacificoRoutingCode;
+            default -> defaultDestinationRoutingCode;
         };
+    }
+
+    private LocalDate resolveAccountingDate() {
+        if (defaultAccountingDate != null && !defaultAccountingDate.isBlank()) {
+            try {
+                return LocalDate.parse(defaultAccountingDate);
+            } catch (DateTimeParseException ignored) {
+            }
+        }
+        return LocalDate.now();
     }
 
     private String userSafeMessage(FailureStage stage, String message) {

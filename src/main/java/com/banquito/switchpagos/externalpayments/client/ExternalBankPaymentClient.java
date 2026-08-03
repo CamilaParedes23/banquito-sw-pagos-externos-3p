@@ -1,10 +1,10 @@
 package com.banquito.switchpagos.externalpayments.client;
 
-import com.banquito.switchpagos.externalpayments.dto.mock.ExternalPaymentRequest;
-import com.banquito.switchpagos.externalpayments.dto.mock.ExternalPaymentResponse;
+import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentRequest;
+import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentResponse;
+import java.util.UUID;
 
 public interface ExternalBankPaymentClient {
-    ExternalPaymentResponse createPayment(String idempotencyKey, ExternalPaymentRequest request);
-    ExternalPaymentResponse getByExternalPaymentId(String externalPaymentId);
-    ExternalPaymentResponse getByIdempotencyKey(String idempotencyKey);
+    InterbankPaymentResponse createPayment(String idempotencyKey, InterbankPaymentRequest request);
+    InterbankPaymentResponse getByPaymentLineId(UUID paymentLineId);
 }

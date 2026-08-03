@@ -2,7 +2,7 @@ package com.banquito.switchpagos.externalpayments.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.banquito.switchpagos.externalpayments.dto.mock.ExternalPaymentRequest;
+import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentRequest;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -14,20 +14,29 @@ class PayloadSanitizerTest {
 
     @Test
     void masksAccountsAndBeneficiaryIdentification() {
-        ExternalPaymentRequest request = new ExternalPaymentRequest(
+        InterbankPaymentRequest request = new InterbankPaymentRequest(
                 UUID.randomUUID(),
-                "BQTO",
-                "TX-123",
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "BQTO001",
+                "BQLL001",
+                "1010100001",
                 "2200110099",
+                "1790012345001",
+                "Empresa Uno",
+                "0102030405",
+                "Beneficiario Uno",
+                "beneficiario@example.com",
+                "Pago normal",
                 new BigDecimal("10.50"),
                 "USD",
-                "Pago normal",
-                "Beneficiario Uno",
-                LocalDate.now());
+                LocalDate.now(),
+                UUID.randomUUID());
 
         String sanitized = sanitizer.sanitize(request);
 
         assertThat(sanitized).contains("destinationAccountNumber=****0099");
+        assertThat(sanitized).contains("sourceAccountNumber=****0001");
         assertThat(sanitized).doesNotContain("2200110099");
     }
 
