@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.banquito.switchpagos.externalpayments.dto.interbank.InterbankPaymentRequest;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -84,24 +86,43 @@ class MockExternalBankPaymentClientTest {
     }
 
     @Test
+    void serializesOnlyRealInterbankContractFields() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        InterbankPaymentRequest request = request("Pago normal", "22001100");
+
+        String json = mapper.writeValueAsString(request);
+
+        assertThat(json).contains("\"uetr\"");
+        assertThat(json).contains("\"originTransactionId\"");
+        assertThat(json).contains("\"routingCode\":\"003\"");
+        assertThat(json).contains("\"destinationAccountNumber\":\"22001100\"");
+        assertThat(json).contains("\"valueDate\"");
+        assertThat(json).doesNotContain("sourceRoutingCode");
+        assertThat(json).doesNotContain("destinationRoutingCode");
+        assertThat(json).doesNotContain("paymentLineUuid");
+        assertThat(json).doesNotContain("sourceAccountNumber");
+        assertThat(json).doesNotContain("beneficiaryIdentification");
+    }
+
+    @Test
     void rejectsInvalidInterbankContract() {
         InterbankPaymentRequest request = new InterbankPaymentRequest(
                 UUID.randomUUID(),
+                UUID.randomUUID().toString(),
+                "003",
+                "22001100",
+                new BigDecimal("10.50"),
+                "USD",
+                "Pago normal",
+                "Beneficiario Uno",
+                LocalDate.now(),
                 UUID.fromString("00000000-0000-3000-8000-000000000001"),
                 UUID.randomUUID(),
-                "BQTO001",
-                "BQLL001",
                 "1010100001",
-                "22001100",
                 "1790012345001",
                 "Empresa Uno",
                 "0102030405",
-                "Beneficiario Uno",
                 "beneficiario@example.com",
-                "Pago normal",
-                new BigDecimal("10.50"),
-                "USD",
-                LocalDate.now(),
                 UUID.randomUUID());
 
         assertThatThrownBy(() -> client.createPayment(request.paymentLineUuid().toString(), request))
@@ -116,21 +137,21 @@ class MockExternalBankPaymentClientTest {
     private static InterbankPaymentRequest requestWithLineId(UUID paymentLineId, String reference, String destinationAccount) {
         return new InterbankPaymentRequest(
                 UUID.randomUUID(),
+                paymentLineId.toString(),
+                "003",
+                destinationAccount,
+                new BigDecimal("10.50"),
+                "USD",
+                reference,
+                "Beneficiario Uno",
+                LocalDate.now(),
                 paymentLineId,
                 UUID.randomUUID(),
-                "BQTO001",
-                "BQLL001",
                 "1010100001",
-                destinationAccount,
                 "1790012345001",
                 "Empresa Uno",
                 "0102030405",
-                "Beneficiario Uno",
                 "beneficiario@example.com",
-                reference,
-                new BigDecimal("10.50"),
-                "USD",
-                LocalDate.now(),
                 UUID.randomUUID());
     }
 }

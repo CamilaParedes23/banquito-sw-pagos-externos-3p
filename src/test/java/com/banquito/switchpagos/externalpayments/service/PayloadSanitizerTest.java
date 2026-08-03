@@ -16,21 +16,21 @@ class PayloadSanitizerTest {
     void masksAccountsAndBeneficiaryIdentification() {
         InterbankPaymentRequest request = new InterbankPaymentRequest(
                 UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "BQTO001",
-                "BQLL001",
-                "1010100001",
+                UUID.randomUUID().toString(),
+                "003",
                 "2200110099",
+                new BigDecimal("10.50"),
+                "USD",
+                "Pago normal",
+                "Beneficiario Uno",
+                LocalDate.now(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "1010100001",
                 "1790012345001",
                 "Empresa Uno",
                 "0102030405",
-                "Beneficiario Uno",
                 "beneficiario@example.com",
-                "Pago normal",
-                new BigDecimal("10.50"),
-                "USD",
-                LocalDate.now(),
                 UUID.randomUUID());
 
         String sanitized = sanitizer.sanitize(request);

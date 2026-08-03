@@ -76,17 +76,17 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
 
     private static String fingerprint(InterbankPaymentRequest request) {
         return request.sourceTransferUuid() + "|" + request.paymentLineUuid() + "|" + request.batchUuid() + "|"
-                + request.sourceRoutingCode() + "|" + request.destinationRoutingCode() + "|"
+                + request.routingCode() + "|"
                 + request.destinationAccountNumber() + "|" + request.amount() + "|" + request.currency() + "|"
                 + request.accountingDate();
     }
 
     private static void validateContract(InterbankPaymentRequest request) {
         if (request == null || request.sourceTransferUuid() == null || request.paymentLineUuid() == null
-                || !isUuidV4(request.paymentLineUuid()) || blank(request.sourceRoutingCode())
-                || blank(request.destinationRoutingCode()) || blank(request.destinationAccountNumber()) || request.amount() == null
+                || !isUuidV4(request.paymentLineUuid()) || blank(request.originTransactionId())
+                || !isThreeDigitRoutingCode(request.routingCode()) || blank(request.destinationAccountNumber()) || request.amount() == null
                 || request.amount().signum() <= 0 || blank(request.currency())
-                || blank(request.beneficiaryIdentification()) || blank(request.beneficiaryName())
+                || blank(request.beneficiaryName())
                 || request.accountingDate() == null || request.correlationId() == null) {
             throw new ExternalBankClientException(
                     "INVALID_INTERBANK_PAYMENT_REQUEST",
@@ -96,6 +96,10 @@ public class MockExternalBankPaymentClient implements ExternalBankPaymentClient 
 
     private static boolean isUuidV4(UUID uuid) {
         return uuid.version() == 4;
+    }
+
+    private static boolean isThreeDigitRoutingCode(String value) {
+        return value != null && value.matches("\\d{3}");
     }
 
     private static boolean blank(String value) {
