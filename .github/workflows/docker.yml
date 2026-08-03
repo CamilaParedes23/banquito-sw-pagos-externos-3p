@@ -39,15 +39,26 @@ jobs:
         run: |
           docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}:prod
 
-      # - name: Trigger Infra Deploy
-      #   run: |
-      #     curl -f -i -X POST \
-      #       -H "Authorization: Bearer ${{ secrets.DEVOPS_TOKEN }}" \
-      #       -H "Accept: application/vnd.github+json" \
-      #       https://api.github.com/repos/CamilaParedes23/banquito-infra/dispatches \
-      #       -d '{
-      #         "event_type": "deploy-switch-back",
-      #         "client_payload": {
-      #           "service": "banquito-sw-pagos-externos"
-      #         }
-      #       }'
+      - name: Trigger Infra Deploy
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.DEVOPS_TOKEN }}
+          script: |
+            try {
+              const response = await github.request('POST /repos/{owner}/{repo}/dispatches', {
+                owner: 'CamilaParedes23',
+                repo: 'banquito-infra-3p',
+                event_type: 'k8s-deploy-switch-back',
+                client_payload: {
+                  service: 'banquito-sw-pagos-externos'
+                },
+                headers: {
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+              })
+
+              core.info(`Dispatch sent. Status: ${response.status}`)
+            } catch (error) {
+              const apiMessage = error?.response?.data ? JSON.stringify(error.response.data) : error.message
+              core.setFailed(`Repository dispatch failed: ${apiMessage}`)
+            }
